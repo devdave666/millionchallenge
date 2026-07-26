@@ -1,0 +1,38 @@
+name: Daily Million Follower Challenge Post
+
+on:
+  schedule:
+    # 13:00 UTC = 9:00 AM ET (during EDT). Adjust the hour if you want a different local time.
+    - cron: '0 13 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Post reel and update counter
+        env:
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_BUSINESS_ACCOUNT_ID: ${{ secrets.IG_BUSINESS_ACCOUNT_ID }}
+        run: python scripts/post_reel.py
+
+      - name: Commit updated counter
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add day_counter.txt
+          git diff --staged --quiet || git commit -m "Bump day counter"
+          git push
