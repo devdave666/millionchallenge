@@ -1,23 +1,30 @@
 import os
-import sys
 import smtplib
-from datetime import date
+from datetime import date, timedelta
 from email.mime.text import MIMEText
 
 ISSUED_FILE = "token_issued.txt"
 TOKEN_LIFESPAN_DAYS = 60
-WARNING_THRESHOLDS = [10, 5, 1]  # days remaining that trigger an email
+WARNING_DAYS_REMAINING = 10
+ASSUMED_ROTATION_WINDOW_DAYS = 7
 
 
-def get_days_remaining():
+def get_issued_date():
     with open(ISSUED_FILE) as f:
-        issued_str = f.read().strip()
-    issued = date.fromisoformat(issued_str)
+        return date.fromisoformat(f.read().strip())
+
+
+def get_days_remaining(issued):
     elapsed = (date.today() - issued).days
     return TOKEN_LIFESPAN_DAYS - elapsed
 
 
-def send_email(days_remaining):
+def set_issued_date(new_date):
+    with open(ISSUED_FILE, "w") as f:
+        f.write(new_date.isoformat())
+
+
+def send_email(days_remaining, next_check_in_date):
     gmail_address = os.environ.get("GMAIL_ADDRESS")
     gmail_app_password = os.environ.get("GMAIL_APP_PASSWORD")
     notify_to = os.environ.get("NOTIFY_EMAIL", gmail_address)
@@ -25,10 +32,9 @@ def send_email(days_remaining):
     if not gmail_address or not gmail_app_password:
         print("GMAIL_ADDRESS / GMAIL_APP_PASSWORD secrets not set - skipping email, "
               f"but token expires in {days_remaining} day(s).")
-        return
+        return False
 
-    urgency = "URGENT: " if days_remaining <= 1 else ""
-    subject = f"{urgency}Million Followers Challenge - Instagram token expires in {days_remaining} day(s)"
+    subject = f"Million Followers Challenge - Instagram token expires in {days_remaining} day(s)"
 
     body = f"""Heads up — the Instagram access token for the Million Followers Challenge
 (@artificial_intellectual) expires in approximately {days_remaining} day(s).
@@ -52,11 +58,11 @@ WHAT TO DO:
    https://github.com/devdave666/millionchallenge/settings/secrets/actions
    (edit IG_ACCESS_TOKEN)
 
-6. Reset the issue-date tracker so this reminder cycle restarts:
-   Edit token_issued.txt in the repo to today's date (YYYY-MM-DD) and commit.
-   https://github.com/devdave666/millionchallenge/edit/main/token_issued.txt
+You do NOT need to manually reset any date file — this system assumes you'll rotate the
+token within the next {ASSUMED_ROTATION_WINDOW_DAYS} days and has already scheduled the
+next reminder for around {next_check_in_date.isoformat()} on its own.
 
-That's it — no need to touch IG_BUSINESS_ACCOUNT_ID, it doesn't change.
+No need to touch IG_BUSINESS_ACCOUNT_ID, it doesn't change.
 """
 
     msg = MIMEText(body)
@@ -69,21 +75,34 @@ That's it — no need to touch IG_BUSINESS_ACCOUNT_ID, it doesn't change.
         server.sendmail(gmail_address, [notify_to], msg.as_string())
 
     print(f"Reminder email sent - token expires in {days_remaining} day(s).")
+    return True
 
 
 def main():
-    days_remaining = get_days_remaining()
-    print(f"Days remaining on token: {days_remaining}")
+    issued = get_issued_date()
+    days_remaining = get_days_remaining(issued)
+    print(f"Token issued: {issued.isoformat()}, days remaining: {days_remaining}")
 
     force_test = os.environ.get("FORCE_TEST_EMAIL", "").lower() == "true"
 
-    if force_test:
-        print("FORCE_TEST_EMAIL set - sending a test reminder regardless of days remaining.")
-        send_email(days_remaining)
-    elif days_remaining in WARNING_THRESHOLDS or days_remaining <= 0:
-        send_email(max(days_remaining, 0))
-    else:
+    should_warn = force_test or days_remaining == WARNING_DAYS_REMAINING
+
+    if not should_warn:
         print("No reminder needed today.")
+        return
+
+    # Assume rotation happens within ASSUMED_ROTATION_WINDOW_DAYS of this email.
+    # Advance the tracked issue date so the next 60-day cycle counts from that
+    # assumed rotation point, instead of waiting for a manual reset.
+    assumed_new_issue_date = date.today() + timedelta(days=ASSUMED_ROTATION_WINDOW_DAYS)
+    next_check_in_date = assumed_new_issue_date + timedelta(days=TOKEN_LIFESPAN_DAYS - WARNING_DAYS_REMAINING)
+
+    sent = send_email(max(days_remaining, 0), next_check_in_date)
+
+    if sent and not force_test:
+        set_issued_date(assumed_new_issue_date)
+        print(f"Auto-advanced token_issued.txt to {assumed_new_issue_date.isoformat()} "
+              f"(assumed rotation within {ASSUMED_ROTATION_WINDOW_DAYS} days).")
 
 
 if __name__ == "__main__":
