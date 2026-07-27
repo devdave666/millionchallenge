@@ -1,0 +1,25 @@
+name: Instagram Token Expiry Check
+
+on:
+  schedule:
+    # Runs daily at 12:00 UTC; only actually emails on the threshold days (10, 5, 1 days left)
+    - cron: '0 12 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check token expiry and notify if needed
+        env:
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
+        run: python scripts/check_token_expiry.py
