@@ -75,7 +75,12 @@ def main():
     days_remaining = get_days_remaining()
     print(f"Days remaining on token: {days_remaining}")
 
-    if days_remaining in WARNING_THRESHOLDS or days_remaining <= 0:
+    force_test = os.environ.get("FORCE_TEST_EMAIL", "").lower() == "true"
+
+    if force_test:
+        print("FORCE_TEST_EMAIL set - sending a test reminder regardless of days remaining.")
+        send_email(days_remaining)
+    elif days_remaining in WARNING_THRESHOLDS or days_remaining <= 0:
         send_email(max(days_remaining, 0))
     else:
         print("No reminder needed today.")
