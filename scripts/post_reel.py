@@ -6,6 +6,7 @@ import requests
 REPO_RAW_VIDEO_URL = "https://raw.githubusercontent.com/devdave666/millionchallenge/main/reel.mp4"
 COUNTER_FILE = "day_counter.txt"
 GRAPH_API_VERSION = "v21.0"
+GRAPH_API_HOST = "graph.instagram.com"  # Instagram Login token path (not graph.facebook.com)
 
 CAPTION_TEMPLATE = """A Million Followers Challenge \U0001F3AF
 
@@ -38,7 +39,7 @@ def main():
 
     day = get_day_number()
     caption = CAPTION_TEMPLATE.format(day=day)
-    base = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{ig_user_id}"
+    base = f"https://{GRAPH_API_HOST}/{GRAPH_API_VERSION}/{ig_user_id}"
 
     resp = requests.post(f"{base}/media", data={
         "media_type": "REELS",
@@ -50,7 +51,7 @@ def main():
     creation_id = resp.json()["id"]
     print(f"Created container {creation_id} for Day {day}")
 
-    status_url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{creation_id}"
+    status_url = f"https://{GRAPH_API_HOST}/{GRAPH_API_VERSION}/{creation_id}"
     for attempt in range(30):
         status_resp = requests.get(status_url, params={
             "fields": "status_code",
