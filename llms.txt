@@ -1,0 +1,90 @@
+# llms.txt — Million Followers Challenge
+
+> Context file for AI agents (Claude, GPT, etc.) working on this repository.
+> Read this fully before making any changes.
+
+## What this project is
+
+A fully automated GitHub Actions pipeline that posts the SAME base reel video to
+Instagram every single day, with only the on-screen "DAY N" overlay and caption
+day-count changing, as a "Million Followers Challenge" — running until the account
+hits 1 million followers.
+
+## Critical identity facts (do not confuse with other projects)
+
+- Instagram account: **@artificial_intellectual**
+- This is a SEPARATE account/pipeline from "the_higher_being" (a different Instagram
+  account run via Make.com by the same owner). NEVER mix code, secrets, or account
+  references between the two. If asked to touch "the_higher_being", stop — that is a
+  different repo and different pipeline entirely.
+- Meta app used: `artificial_intellectual` (App ID: 1510843857376746)
+- Instagram Business Account ID: `37303495912627928`
+- Auth type: **Instagram Login token** (not Facebook Page-linked Business Login).
+  This means all Graph API calls MUST use host `graph.instagram.com`, NOT
+  `graph.facebook.com`. Using the wrong host causes silent 400 errors even with a
+  valid token.
+
+## How the pipeline works
+
+1. `.github/workflows/daily-reel.yml` runs daily via cron (`0 13 * * *` = 9am ET)
+2. `scripts/post_reel.py`:
+   - Reads `day_counter.txt` for the current day number
+   - Renders `reel_day_N.mp4` from the master `reel.mp4` using ffmpeg, burning in a
+     "DAY N" text overlay (see "Known issue" below for why this step exists)
+   - Commits/pushes that rendered file so it has a public raw.githubusercontent.com URL
+   - Creates an Instagram media container (`media_type=REELS`) pointing at that URL
+   - Polls the container status until `FINISHED` (or raises on `ERROR`)
+   - Publishes it
+   - Only THEN increments `day_counter.txt` and commits — a failed run never skips
+     a day or double-counts
+   - Deletes the rendered per-day file afterward to keep the repo lean
+3. `.github/workflows/token-expiry-check.yml` runs daily, tracks `token_issued.txt`
+   (60-day assumed token lifespan), and emails a reminder at exactly 10 days
+   remaining with rotation instructions — then auto-advances the tracked date by
+   +7 days (assuming the owner rotates within that window) so no manual date
+   editing is ever needed.
+4. Both the daily post workflow and the token-expiry workflow send failure/reminder
+   emails via Gmail SMTP using repo secrets (see below).
+
+## Known issues / hard-won lessons (do not re-break these)
+
+- **Repo must stay PUBLIC.** Instagram's servers fetch the video anonymously via
+  raw.githubusercontent.com, which does not serve private repo content. If this repo
+  is ever set to private, every post fails with a container `status_code: ERROR`
+  until it's set back to public. This already happened once (Aug 2026) and cost a
+  day of failed posts before being diagnosed.
+- **Duplicate content gets rejected.** Instagram's server-side processing began
+  returning `status_code: ERROR` after ~9 consecutive uploads of the byte-identical
+  video. The fix was to burn a unique "DAY N" overlay into each day's render so the
+  file is never byte-identical twice. Do not revert to posting the static master
+  `reel.mp4` directly.
+- **Wrong API host = silent failure.** Because this account uses the Instagram
+  Login flow (not a Facebook Page-linked one), API calls go to
+  `graph.instagram.com`. If you ever build a Facebook-Page-linked pipeline (e.g. for
+  a different, Business-Login account), that one correctly uses `graph.facebook.com`
+  instead — do not copy that host assumption across projects blindly.
+- **Access token expires ~60 days.** This is an Instagram Login token, not a
+  System User token, so it does expire. The expiry-check workflow handles reminders
+  automatically — don't remove it.
+
+## Required repo secrets
+
+| Secret | Purpose |
+|---|---|
+| `IG_ACCESS_TOKEN` | Instagram Login long-lived access token for @artificial_intellectual |
+| `IG_BUSINESS_ACCOUNT_ID` | `37303495912627928` |
+| `GMAIL_ADDRESS` | Sends reminder/failure emails |
+| `GMAIL_APP_PASSWORD` | Gmail App Password (not the regular account password) |
+| `NOTIFY_EMAIL` | (optional) where alerts go, defaults to `GMAIL_ADDRESS` |
+
+See `HANDOFF.md` for how a human should grant a new AI agent/session access to
+manage these.
+
+## What NOT to do without explicit owner confirmation
+
+- Do not touch the_higher_being's Make.com scenarios or Instagram account from this
+  repo or this context.
+- Do not switch this repo to private.
+- Do not revert to posting the static master video without the per-day overlay.
+- Do not rotate/regenerate `IG_ACCESS_TOKEN` speculatively — only when the owner
+  says it's expired or the expiry-check email fires.
