@@ -52,7 +52,7 @@ def render_day_video(day):
     return output_path
 
 
-def git_commit_push(add_paths, remove_paths, message):
+def git_commit_push(add_paths, remove_paths, message, max_retries=5):
     subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True)
     subprocess.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=True)
     if remove_paths:
@@ -60,11 +60,24 @@ def git_commit_push(add_paths, remove_paths, message):
     if add_paths:
         subprocess.run(["git", "add", *add_paths], check=True)
     diff = subprocess.run(["git", "diff", "--staged", "--quiet"])
-    if diff.returncode != 0:
-        subprocess.run(["git", "commit", "-m", message], check=True)
-        subprocess.run(["git", "push"], check=True)
-        return True
-    return False
+    if diff.returncode == 0:
+        return False
+
+    subprocess.run(["git", "commit", "-m", message], check=True)
+
+    # The remote can move between checkout and push (a rerun of this same
+    # workflow, or another workflow committing to main), which makes a plain
+    # `git push` fail with a non-fast-forward rejection. Rebase onto the
+    # latest remote main and retry instead of letting that crash the run.
+    for attempt in range(max_retries):
+        push = subprocess.run(["git", "push"])
+        if push.returncode == 0:
+            return True
+        print(f"git push rejected (attempt {attempt + 1}/{max_retries}), fetching and rebasing before retry")
+        subprocess.run(["git", "fetch", "origin", "main"], check=True)
+        subprocess.run(["git", "rebase", "origin/main"], check=True)
+
+    raise RuntimeError(f"git push failed after {max_retries} rebase-and-retry attempts")
 
 
 def main():
